@@ -818,7 +818,7 @@ func TestCertRequest(t *testing.T) {
 		Id:    asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 1},
 		Value: []byte("dummy"),
 	}
-	b, err := certRequest(key, "example.org", []pkix.Extension{ext})
+	b, err := certRequest(key, []string{"example.org"}, []pkix.Extension{ext}, "example.org")
 	if err != nil {
 		t.Fatalf("certRequest: %v", err)
 	}

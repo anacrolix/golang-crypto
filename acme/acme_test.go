@@ -732,7 +732,7 @@ func TestTLSALPN01ChallengeCert(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tlscert, err := newTestClient().TLSALPN01ChallengeCert(token, domain)
+	tlscert, err := newTestClient().TLSALPN01ChallengeCert(token, []string{domain})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -299,7 +299,7 @@ func (p *prober) fulfill(ctx context.Context, z *acme.Authorization) error {
 }
 
 func (p *prober) runTLSALPN01(ctx context.Context, z *acme.Authorization, chal *acme.Challenge) error {
-	tokenCert, err := p.client.TLSALPN01ChallengeCert(chal.Token, z.Identifier.Value)
+	tokenCert, err := p.client.TLSALPN01ChallengeCert(chal.Token, []string{z.Identifier.Value})
 	if err != nil {
 		return fmt.Errorf("TLSALPN01ChallengeCert: %v", err)
 	}

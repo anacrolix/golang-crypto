@@ -175,6 +175,11 @@ type Manager struct {
 	// See RFC 8555, Section 7.3.4 for more details.
 	ExternalAccountBinding *acme.ExternalAccountBinding
 
+	// An extra SAN and the CN to use for certificates issue. Necessary for Let's Encrypt which
+	// requires the CN field, and insists that both it and one of the SANs are less than 64
+	// characters long.
+	ShortSAN string
+
 	clientMu sync.Mutex
 	client   *acme.Client // initialized by acmeClient method
 
@@ -653,7 +658,13 @@ func (m *Manager) certState(ck certKey) (*certState, error) {
 // authorizedCert starts the domain ownership verification process and requests a new cert upon success.
 // The key argument is the certificate private key.
 func (m *Manager) authorizedCert(ctx context.Context, key crypto.Signer, ck certKey) (der [][]byte, leaf *x509.Certificate, err error) {
-	csr, err := certRequest(key, ck.domain, m.ExtraExtensions)
+	domains := []string{ck.domain}
+	commonName := ck.domain
+	if m.ShortSAN != "" {
+		domains = append(domains, m.ShortSAN)
+		commonName = m.ShortSAN
+	}
+	csr, err := certRequest(key, domains, m.ExtraExtensions, commonName)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -670,7 +681,7 @@ func (m *Manager) authorizedCert(ctx context.Context, key crypto.Signer, ck cert
 		return nil, nil, errPreRFC
 	}
 
-	o, err := m.verifyRFC(ctx, client, ck.domain)
+	o, err := m.verifyRFC(ctx, client, domains...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -688,7 +699,7 @@ func (m *Manager) authorizedCert(ctx context.Context, key crypto.Signer, ck cert
 
 // verifyRFC runs the identifier (domain) order-based authorization flow for RFC compliant CAs
 // using each applicable ACME challenge type.
-func (m *Manager) verifyRFC(ctx context.Context, client *acme.Client, domain string) (*acme.Order, error) {
+func (m *Manager) verifyRFC(ctx context.Context, client *acme.Client, domains ...string) (*acme.Order, error) {
 	// Try each supported challenge type starting with a new order each time.
 	// The nextTyp index of the next challenge type to try is shared across
 	// all order authorizations: if we've tried a challenge type once and it didn't work,
@@ -697,7 +708,7 @@ func (m *Manager) verifyRFC(ctx context.Context, client *acme.Client, domain str
 	nextTyp := 0 // challengeTypes index
 AuthorizeOrderLoop:
 	for {
-		o, err := client.AuthorizeOrder(ctx, acme.DomainIDs(domain))
+		o, err := client.AuthorizeOrder(ctx, acme.DomainIDs(domains...))
 		if err != nil {
 			return nil, err
 		}
@@ -735,10 +746,10 @@ AuthorizeOrderLoop:
 				nextTyp++
 			}
 			if chal == nil {
-				return nil, fmt.Errorf("acme/autocert: unable to satisfy %q for domain %q: no viable challenge type found", z.URI, domain)
+				return nil, fmt.Errorf("acme/autocert: unable to satisfy %q: no viable challenge type found", z.URI)
 			}
 			// Respond to the challenge and wait for validation result.
-			cleanup, err := m.fulfill(ctx, client, chal, domain)
+			cleanup, err := m.fulfill(ctx, client, chal, domains[0], domains)
 			if err != nil {
 				continue AuthorizeOrderLoop
 			}
@@ -804,10 +815,10 @@ func (m *Manager) deactivatePendingAuthz(uri []string) {
 
 // fulfill provisions a response to the challenge chal.
 // The cleanup is non-nil only if provisioning succeeded.
-func (m *Manager) fulfill(ctx context.Context, client *acme.Client, chal *acme.Challenge, domain string) (cleanup func(), err error) {
+func (m *Manager) fulfill(ctx context.Context, client *acme.Client, chal *acme.Challenge, domain string, challengeDomains []string) (cleanup func(), err error) {
 	switch chal.Type {
 	case "tls-alpn-01":
-		cert, err := client.TLSALPN01ChallengeCert(chal.Token, domain)
+		cert, err := client.TLSALPN01ChallengeCert(chal.Token, challengeDomains)
 		if err != nil {
 			return nil, err
 		}
@@ -1067,10 +1078,11 @@ func (s *certState) tlscert() (*tls.Certificate, error) {
 }
 
 // certRequest generates a CSR for the given common name.
-func certRequest(key crypto.Signer, name string, ext []pkix.Extension) ([]byte, error) {
+func certRequest(key crypto.Signer, names []string, ext []pkix.Extension, commonName string) ([]byte, error) {
 	req := &x509.CertificateRequest{
-		Subject:         pkix.Name{CommonName: name},
-		DNSNames:        []string{name},
+		// Let's Encrypt still requires a CN.
+		Subject:         pkix.Name{CommonName: commonName},
+		DNSNames:        names,
 		ExtraExtensions: ext,
 	}
 	return x509.CreateCertificateRequest(rand.Reader, req, key)

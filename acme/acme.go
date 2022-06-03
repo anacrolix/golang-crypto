@@ -617,7 +617,7 @@ func (c *Client) TLSSNI02ChallengeCert(token string, opt ...CertOption) (cert tl
 // The returned certificate is valid for the next 24 hours and must be presented only when
 // the server name in the TLS ClientHello matches the domain, and the special acme-tls/1 ALPN protocol
 // has been specified.
-func (c *Client) TLSALPN01ChallengeCert(token, domain string, opt ...CertOption) (cert tls.Certificate, err error) {
+func (c *Client) TLSALPN01ChallengeCert(token string, domains []string, opt ...CertOption) (cert tls.Certificate, err error) {
 	ka, err := keyAuth(c.Key.Public(), token)
 	if err != nil {
 		return tls.Certificate{}, err
@@ -647,7 +647,7 @@ func (c *Client) TLSALPN01ChallengeCert(token, domain string, opt ...CertOption)
 	}
 	tmpl.ExtraExtensions = append(tmpl.ExtraExtensions, acmeExtension)
 	newOpt = append(newOpt, WithTemplate(tmpl))
-	return tlsChallengeCert([]string{domain}, newOpt)
+	return tlsChallengeCert(domains, newOpt)
 }
 
 // popNonce returns a nonce value previously stored with c.addNonce
